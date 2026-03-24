@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>仓库货物定位</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f7fb;
+            overflow-x: hidden;
+        }
+        /* 搜索区域（可隐藏） */
+        .search-area {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: white;
+            padding: 12px 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        .search-area.hidden {
+            transform: translateY(-100%);
+            pointer-events: none;
+        }
+        .search-container {
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .search-box {
+            background: #f0f2f5;
+            border-radius: 30px;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+        }
+        .search-box input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            background: transparent;
+        }
+        .search-box button {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 20;
+            display: none;
+        }
+        .suggestions div {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .suggestions div:hover {
+            background-color: #f5f7fb;
+        }
+        /* 浮动搜索按钮 */
+        .float-search-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            background-color: #2980b9;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 150;
+            transition: transform 0.2s;
+            opacity: 0;
+            visibility: hidden;
+        }
+        .float-search-btn.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .float-search-btn:active {
+            transform: scale(0.95);
+        }
+        /* 图片容器 */
+        .map-wrapper {
+            width: 100%;
+            position: relative;
+            cursor: pointer;
+            background: #fff;
+        }
+        .map-wrapper img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        /* 高亮层 */
+        .map-highlight {
+            position: absolute;
+            border: 3px solid red;
+            background-color: rgba(255,0,0,0.2);
+            pointer-events: none;
+            z-index: 10;
+            border-radius: 4px;
+        }
+        /* 提示条 */
+        .info-bar {
+            background-color: #e8f4fd;
+            padding: 8px 16px;
+            font-size: 14px;
+            text-align: center;
+            width: 100%;
+        }
+        .rotate-tip {
+            background-color: #fef9e6;
+            padding: 8px 16px;
+            font-size: 13px;
+            text-align: center;
+            width: 100%;
+            display: none;
+        }
+        /* 图片模态框 */
+        .modal-image {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            z-index: 2000;
+            cursor: pointer;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-image img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+
+<div id="searchArea" class="search-area">
+    <div class="search-container">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜索商品名称...">
+            <button id="searchBtn">🔍</button>
+        </div>
+        <div id="suggestions" class="suggestions"></div>
+    </div>
+</div>
+
+<div id="floatSearchBtn" class="float-search-btn">🔍</div>
+
+<div id="infoBar" class="info-bar">💡 点击图片可放大查看细节</div>
+<div id="rotateTip" class="rotate-tip">👉 将手机横屏观看，平面图更清晰</div>
+
+<div class="map-wrapper" id="mapWrapper">
+    <img id="mapImage" src="images/map.png" alt="仓库平面图" usemap="#warehouseMap" style="width:100%; height:auto;" onclick="openImageModal(this.src)">
+    <map name="warehouseMap">
+       <!-- 根据你的实际图片坐标修改以下区域（仅用于定位，界面不显示） -->
+        <area shape="rect" coords="1277,1,1319,241" data-location="M17U+支架" alt="">
+        <area shape="rect" coords="1000,2276,1049,2484" data-location="K9PLUS" alt="">
+        <area shape="rect" coords="1217,1,1284,236" data-location="M17U" alt="">
+        <area shape="rect" coords="1111,5,1226,240" data-location="M17三模+支架" alt="">
+        <area shape="rect" coords="1068,1,1144,233" data-location="M17三模" alt="">
+        <area shape="rect" coords="996,2,1089,236" data-location="T2" alt="">
+        <area shape="rect" coords="922,3,1016,233" data-location="S21无线智充" alt="">
+        <area shape="rect" coords="833,1,936,227" data-location="S21GS火焰风暴" alt="">
+        <area shape="rect" coords="784,2,855,231" data-location="S21GS灰" alt="">
+        <area shape="rect" coords="624,1,802,233" data-location="DCPRO火焰风暴" alt="">
+        <area shape="rect" coords="454,3,638,229" data-location="K02BS蓝" alt="">
+        <area shape="rect" coords="342,6,463,233" data-location="DCPRO灰" alt="">
+        <area shape="rect" coords="262,7,365,224" data-location="S21U火焰风暴" alt="">
+        <area shape="rect" coords="190,5,279,233" data-location="S21U灰" alt="">
+        <area shape="rect" coords="133,3,216,232" data-location="S21MAX白" alt="">
+        <area shape="rect" coords="62,3,162,234" data-location="S21MAX灰" alt="">
+        <area shape="rect" coords="7,4,91,236" data-location="S21D" alt="">
+        <area shape="rect" coords="870,286,1104,413" data-location="K06S" alt="">
+        <area shape="rect" coords="1036,357,1112,822" data-location="K9UPRO蓝+OTG" alt="">
+        <area shape="rect" coords="990,490,1056,808" data-location="K06S+支架" alt="">
+        <area shape="rect" coords="1035,846,1098,1216" data-location="K9UPRO蓝" alt="">
+        <area shape="rect" coords="987,866,1050,1236" data-location="K05S" alt="">
+        <area shape="rect" coords="984,1193,1047,1563" data-location="K9U蓝" alt="">
+        <area shape="rect" coords="1034,1253,1098,1571" data-location="K9UPRO黑+支架" alt="">
+        <area shape="rect" coords="1033,1520,1097,1838" data-location="K9UPRO黑+OTG" alt="">
+        <area shape="rect" coords="994,1527,1058,1845" data-location="K9UPRO白" alt="">
+        <area shape="rect" coords="1043,1814,1107,2132" data-location="K9UPRO黑" alt="">
+        <area shape="rect" coords="993,1831,1047,2079" data-location="K9UPRO粉" alt="">
+        <area shape="rect" coords="992,2042,1046,2290" data-location="S21U飞天神女" alt="">
+        <area shape="rect" coords="873,2223,975,2484" data-location="S11LL" alt="">
+        <area shape="rect" coords="873,2223,975,2484" data-location="S11GS" alt="">
+        <area shape="rect" coords="751,1965,827,2229" data-location="GS+支架" alt="">
+        <area shape="rect" coords="695,1975,771,2239" data-location="GSPRO+支架" alt="">
+        <area shape="rect" coords="743,1738,819,2002" data-location="S31咖+支架" alt="">
+        <area shape="rect" coords="755,1543,831,1807" data-location="S31咖" alt="">
+        <area shape="rect" coords="701,1551,777,1815" data-location="GS火+支架" alt="">
+        <area shape="rect" coords="689,1314,765,1578" data-location="S21MAX白+支架" alt="">
+        <area shape="rect" coords="693,1062,769,1326" data-location="T10+支架" alt="">
+        <area shape="rect" coords="747,1311,823,1575" data-location="K05S+支架" alt="">
+        <area shape="rect" coords="757,944,833,1208" data-location="R3i" alt="">
+        <area shape="rect" coords="683,760,759,1024" data-location="T10" alt="">
+        <area shape="rect" coords="744,714,820,978" data-location="R3i+支架" alt="">
+        <area shape="rect" coords="751,488,827,752" data-location="GSPRO" alt="">
+        <area shape="rect" coords="697,489,773,753" data-location="K02BS灰" alt="">
+        <area shape="rect" coords="644,277,824,431" data-location="K02SPRO蓝" alt="">
+        <area shape="rect" coords="508,781,688,935" data-location="K03U熊猫白" alt="">
+        <area shape="rect" coords="371,782,551,936" data-location="k03U黑" alt="">
+        <area shape="rect" coords="254,788,393,941" data-location="K03U白" alt="">
+        <area shape="rect" coords="97,766,216,932" data-location="AS10黑" alt="">
+        <area shape="rect" coords="85,942,204,1108" data-location="AS10白" alt="">
+        <area shape="rect" coords="0,848,119,1014" data-location="DM01MAX白" alt="">
+        <area shape="rect" coords="1,1090,107,1333" data-location="DM01MAX黑" alt="">
+        <area shape="rect" coords="78,1088,184,1331" data-location="2S声卡绿" alt="">
+        <area shape="rect" coords="272,1083,378,1326" data-location="V13U" alt="">
+        <area shape="rect" coords="378,1096,484,1339" data-location="V13U白" alt="">
+        <area shape="rect" coords="521,1087,627,1330" data-location="K03S白+支架" alt="">
+        <area shape="rect" coords="536,906,642,1149" data-location="K03U粉" alt="">
+        <area shape="rect" coords="385,940,520,1106" data-location="无线7.1白" alt="">
+        <area shape="rect" coords="260,946,395,1112" data-location="无线7.1粉" alt="">
+        <area shape="rect" coords="0,1370,135,1536" data-location="X1" alt="">
+        <area shape="rect" coords="84,1332,219,1498" data-location="无线7.1黑" alt="">
+        <area shape="rect" coords="267,1316,390,1564" data-location="V13UPRO" alt="">
+        <area shape="rect" coords="5348,1313,471,1561" data-location="V13UPRO白" alt="">
+        <area shape="rect" coords="420,1313,543,1561" data-location="V13U粉猫" alt="">
+        <area shape="rect" coords="511,1315,634,1563" data-location="K03S黑+支架" alt="">
+        <area shape="rect" coords="50,1567,114,1815" data-location="K03S进阶白" alt="">
+        <area shape="rect" coords="79,1581,193,1829" data-location="K03S进阶蓝" alt="">
+        <area shape="rect" coords="0,1816,114,2064" data-location="K03S进阶粉" alt="">
+        <area shape="rect" coords="258,1835,349,2070" data-location="V13D" alt="">
+        <area shape="rect" coords="336,1831,454,2078" data-location="V13D+TPC头" alt="">
+        <area shape="rect" coords="439,1834,557,2081" data-location="V13D+二合一" alt="">
+        <area shape="rect" coords="522,1598,665,2054" data-location="无线7.1黑+支架" alt="">
+        <area shape="rect" coords="6,2058,111,2465" data-location="无线7.1白+支架" alt="">
+        <area shape="rect" coords="74,2054,179,2461" data-location="K03S黑" alt="">
+        <area shape="rect" coords="155,2079,260,2486" data-location="K03S白" alt="">
+        <area shape="rect" coords="241,2079,346,2486" data-location="无线7.1粉+支架" alt="">
+        <area shape="rect" coords="329,2075,434,2482" data-location="K03U白+支架" alt="">
+        <area shape="rect" coords="433,2072,538,2479" data-location="K03U黑+支架" alt="">
+        <area shape="rect" coords="549,2070,654,2477" data-location="S11D" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+        <area shape="rect" coords="500,50,600,100" data-location="C" alt="">
+    </map>
+</div>
+
+<!-- 图片放大模态框 -->
+<div id="imageModal" class="modal-image" onclick="closeImageModal()">
+    <img id="modalImage" src="" alt="放大图片">
+</div>
+
+<script>
+    // ---------- 商品数据（只保留商品名和对应的位置代码） ----------
+    const products = [
+        { 
+        name: "K03S有线7.1熊猫白", 
+        aliases: ["k03U熊猫白", "k03s有线7.1熊猫白"], 
+        locationCode: "K03U熊猫白" 
+    },
+    { 
+        name: "K03S有线7.1武士黑", 
+        aliases: ["k03U黑", "k03s有线7.1武士黑","K03u武士黑"], 
+        locationCode: "k03U黑" 
+    },
+    { 
+        name: "K03S有线7.1b冰川白", 
+        aliases: ["k03U白", "k03s有线7.1冰川白","K03u冰川白"], 
+        locationCode: "k03U白" 
+    },
+    { 
+        name: "K03S有线7.1b极光粉", 
+        aliases: ["k03U粉", "k03s有线7.1极光粉","K03u极光粉"], 
+        locationCode: "K03U粉" 
+    },
+    { 
+        name: "K03S无线7.1冰川白", 
+        aliases: ["无线白","无线7.1白", "k03s无线7.1冰川白"], 
+        locationCode: "无线7.1白" 
+    },
+    { 
+        name: "K03S无线7.1极光粉", 
+        aliases: ["无线粉","无线7.1粉", "k03s无线7.1极光粉"], 
+        locationCode: "无线7.1粉" 
+    },
+    { 
+        name: "K03S白+支架", 
+        locationCode: "K03S白+支架" 
+    },
+    { 
+        name: "V13U白灰", 
+        aliases: ["V13U白", "V13U白灰"], 
+        locationCode: "V13U白" 
+    },
+    { 
+        name: "V13U", 
+        aliases: ["V13U", "V13U黑"], 
+        locationCode: "V13U" 
+    },
+    { 
+        name: "V13U", 
+        aliases: ["V13U", "V13U黑"], 
+        locationCode: "V13U" 
+    },
+    { 
+        name: "K03S黑+支架", 
+        locationCode: "K03S黑+支架" 
+    },
+    { 
+        name: "V13U粉色猫", 
+        aliases: ["V13U粉色猫", "V13U粉猫"], 
+        locationCode: "V13U粉猫" 
+    },
+    { 
+        name: "V13UPRO白灰", 
+        aliases: ["V13UPRO白灰", "V13UPRO白"], 
+        locationCode: "V13UPRO白" 
+    },
+    { 
+        name: "V13UPRO", 
+        aliases: ["V13UPRO黑绿", "V13UPRO"], 
+        locationCode: "V13UPRO" 
+    },
+    { 
+        name: "无线7.1黑+支架", 
+        locationCode: "无线7.1黑+支架" 
+    },
+    { 
+        name: "V13D+二合一", 
+        locationCode: "V13D+二合一" 
+    },
+    { 
+        name: "V13D+TPC头", 
+        locationCode: "V13D+TPC头" 
+    },
+    { 
+        name: "V13D", 
+        aliases: ["V13DS", "V13D特价"],
+        locationCode: "V13D" 
+    },
+    { 
+        name: "S11D", 
+        locationCode: "S11D" 
+    },
+    { 
+        name: "K03U黑+支架", 
+        locationCode: "K03U黑+支架" 
+    },
+    { 
+        name: "K03U白+支架", 
+        locationCode: "K03U白+支架" 
+    },
+    { 
+        name: "无线7.1粉+支架", 
+        locationCode: "无线7.1粉+支架" 
+    },
+    { 
+        name: "K03S白", 
+        locationCode: "K03S白" 
+    },
+    { 
+        name: "K03S黑", 
+        locationCode: "K03S黑" 
+    },
+    { 
+        name: "无线7.1白+支架", 
+        locationCode: "无线7.1白+支架" 
+    },
+    { 
+        name: "K03S进阶版极光粉", 
+        aliases: ["K03S进阶粉"], 
+        locationCode: "K03S进阶粉" 
+    },
+    { 
+        name: "K03S进阶版宝石蓝", 
+        aliases: ["K03S进阶蓝"], 
+        locationCode: "K03S进阶蓝" 
+    },
+    { 
+        name: "K03S进阶版熊猫白", 
+        aliases: ["K03S进阶白"], 
+        locationCode: "K03S进阶白" 
+    },
+    { 
+        name: "K03S无线7.1武士黑", 
+        aliases: ["无线黑","无线7.1黑","K03S无线7.1黑"], 
+        locationCode: "无线7.1黑" 
+    },
+    { 
+        name: "X1", 
+        locationCode: "X1" 
+    },
+    { 
+        name: "DM01MAX黑", 
+        locationCode: "DM01MAX黑" 
+    },
+    { 
+        name: "DM01MAX白", 
+        locationCode: "DM01MAX白" 
+    },
+    { 
+        name: "2S声卡绿", 
+        locationCode: "2S声卡绿" 
+    },
+    { 
+        name: "AS10白", 
+        locationCode: "AS10白" 
+    },
+    { 
+        name: "AS10黑", 
+        locationCode: "AS10黑" 
+    },
+        { name: "M17U+支架", locationCode: "M17U+支架" },
+        { name: "M17U", locationCode: "M17U" },
+        { name: "M17三模+支架", locationCode: "M17三模+支架" },
+        { name: "M17三模", locationCode: "M17三模" },
+        { name: "T2", locationCode: "T2" },
+        { name: "S21无线智充", locationCode: "S21无线智充" },
+        { name: "S21GS火焰风暴", locationCode: "S21GS火焰风暴" },
+        { name: "S21GS灰", locationCode: "S21GS灰" },
+        { name: "DCPRO火焰风暴", locationCode: "DCPRO火焰风暴" },
+        { name: "K02BS蓝", locationCode: "K02BS蓝" },
+        { name: "DCPRO灰", locationCode: "DCPRO灰" },
+        { name: "S21U火焰风暴", locationCode: "S21U火焰风暴" },
+        { name: "S21U灰", locationCode: "S21U灰" },
+        { name: "S21MAX白", locationCode: "S21MAX白" },
+        { name: "S21MAX灰", locationCode: "S21MAX灰" },
+        { name: "S21D", 
+        aliases: ["S21DS"],
+        locationCode: "S21D" },
+        { name: "K06S", locationCode: "K06S" },
+        { name: "K9UPRO蓝+OTG", locationCode: "K9UPRO蓝+OTG" },
+        { name: "K06S+支架", locationCode: "K06S+支架" },
+        { name: "K9UPRO蓝", locationCode: "K9UPRO蓝" },
+        { name: "K05S", locationCode: "K05S" },
+        { name: "K9U蓝", locationCode: "K9U蓝" },
+        { name: "K9UPRO黑+支架", locationCode: "K9UPRO黑+支架" },
+        { name: "K9UPRO黑+OTG", locationCode: "K9UPRO黑+OTG" },
+        { name: "K9UPRO白", locationCode: "K9UPRO白" },
+        { name: "K9UPRO黑", locationCode: "K9UPRO黑" },
+        { name: "K9UPRO粉", locationCode: "K9UPRO粉" },
+        { name: "S21U飞天神女", locationCode: "S21U飞天神女" },
+        { name: "S11LL", locationCode: "S11LL" },
+        { name: "S11GS", locationCode: "S11GS" },
+        { name: "GS+支架", locationCode: "GS+支架" },
+        { name: "GSPRO+支架", locationCode: "GSPRO+支架" },
+        { name: "S31咖+支架", locationCode: "S31咖+支架" },
+        { name: "S31咖", locationCode: "S31咖" },
+        { name: "GS火+支架", locationCode: "GS火+支架" },
+        { name: "S21MAX白+支架", locationCode: "S21MAX白+支架" },
+        { name: "T10+支架", locationCode: "T10+支架" },
+        { name: "K05S+支架", locationCode: "K05S+支架" },
+        { name: "R3i", locationCode: "R3i" },
+        { name: "T10", locationCode: "T10" },
+        { name: "R3i+支架", locationCode: "R3i+支架" },
+        { name: "GSPRO", locationCode: "GSPRO" },
+        { name: "K02BS灰", locationCode: "K02BS灰" },
+        { name: "K02SPRO蓝", locationCode: "K02SPRO蓝" },
+        { name: "K9PLUS", locationCode: "K9PLUS" },
+        // 继续添加其他商品...
+    ];
+
+    // 辅助函数
+    function matches(str, keyword) {
+        return str.toLowerCase().includes(keyword.toLowerCase());
+    }
+
+    function getSuggestions(keyword) {
+    if (!keyword.trim()) return [];
+    const kw = keyword.trim().toLowerCase();
+    return products
+        .filter(p => {
+            // 匹配标准名称
+            if (p.name.toLowerCase().includes(kw)) return true;
+            // 匹配别名
+            if (p.aliases && p.aliases.some(alias => alias.toLowerCase().includes(kw))) return true;
+            return false;
+        })
+        .slice(0, 5);
+}
+
+    // DOM 元素
+    const searchArea = document.getElementById('searchArea');
+    const floatBtn = document.getElementById('floatSearchBtn');
+    const searchInput = document.getElementById('searchInput');
+    const suggestionsDiv = document.getElementById('suggestions');
+    const searchBtn = document.getElementById('searchBtn');
+
+    // 显示/隐藏搜索区域
+    function hideSearchArea() {
+        searchArea.classList.add('hidden');
+        floatBtn.classList.add('visible');
+    }
+    function showSearchArea() {
+        searchArea.classList.remove('hidden');
+        floatBtn.classList.remove('visible');
+        searchInput.focus();
+    }
+
+    // 渲染建议列表
+    function renderSuggestions(keyword) {
+        const matches = getSuggestions(keyword);
+        if (matches.length === 0) {
+            suggestionsDiv.style.display = 'none';
+            return;
+        }
+        suggestionsDiv.innerHTML = matches.map(p => `<div data-loc="${p.locationCode}" data-name="${p.name}">${p.name}</div>`).join('');
+        suggestionsDiv.style.display = 'block';
+        document.querySelectorAll('#suggestions div').forEach(div => {
+            div.addEventListener('click', () => {
+                const loc = div.getAttribute('data-loc');
+                const name = div.getAttribute('data-name');
+                highlightLocation(loc, name);
+                suggestionsDiv.style.display = 'none';
+                searchInput.value = '';
+                hideSearchArea(); // 隐藏搜索框
+            });
+        });
+    }
+
+    let currentHighlight = null;
+    function highlightLocation(locationCode, productName) {
+        // 移除已有高亮
+        if (currentHighlight) {
+            currentHighlight.remove();
+            currentHighlight = null;
+        }
+
+        const img = document.getElementById('mapImage');
+        if (!img) return;
+
+        if (!img.complete) {
+            img.onload = () => highlightLocation(locationCode, productName);
+            return;
+        }
+
+        const area = document.querySelector(`map area[data-location="${locationCode}"]`);
+        if (!area) {
+            alert(`未找到区域 ${locationCode}，请检查热区配置`);
+            return;
+        }
+
+        const coords = area.getAttribute('coords').split(',').map(Number);
+        if (coords.length !== 4) return;
+
+        const imgRect = img.getBoundingClientRect();
+        const scaleX = imgRect.width / img.naturalWidth;
+        const scaleY = imgRect.height / img.naturalHeight;
+
+        const left = imgRect.left + coords[0] * scaleX;
+        const top = imgRect.top + coords[1] * scaleY;
+        const width = (coords[2] - coords[0]) * scaleX;
+        const height = (coords[3] - coords[1]) * scaleY;
+
+        const highlight = document.createElement('div');
+        highlight.className = 'map-highlight';
+        highlight.style.left = left + 'px';
+        highlight.style.top = top + 'px';
+        highlight.style.width = width + 'px';
+        highlight.style.height = height + 'px';
+        document.body.appendChild(highlight);
+        currentHighlight = highlight;
+
+        // 自动滚动让红框居中
+        requestAnimationFrame(() => {
+            const highlightRect = highlight.getBoundingClientRect();
+            const scrollY = window.scrollY;
+            const targetY = scrollY + highlightRect.top - (window.innerHeight / 2) + (highlightRect.height / 2);
+            window.scrollTo({ top: targetY, behavior: 'smooth' });
+        });
+
+        // 临时提示
+        const infoBar = document.getElementById('infoBar');
+        const originalText = infoBar.innerHTML;
+        infoBar.innerHTML = `✅ 已定位到“${productName}”（红框处）`;
+        infoBar.style.backgroundColor = '#d4edda';
+        setTimeout(() => {
+            infoBar.innerHTML = originalText;
+            infoBar.style.backgroundColor = '#e8f4fd';
+        }, 3000);
+
+        // 5秒后自动清除高亮
+        setTimeout(() => {
+            if (currentHighlight === highlight) {
+                highlight.remove();
+                currentHighlight = null;
+            }
+        }, 5000);
+    }
+
+    // 搜索按钮点击
+    searchBtn.addEventListener('click', () => {
+        const keyword = searchInput.value.trim();
+        if (!keyword) return;
+        const matches = getSuggestions(keyword);
+        if (matches.length > 0) {
+            const product = matches[0];
+            highlightLocation(product.locationCode, product.name);
+            searchInput.value = '';
+            hideSearchArea(); // 隐藏搜索框
+        } else {
+            alert('未找到匹配的商品');
+        }
+        suggestionsDiv.style.display = 'none';
+    });
+
+    // 输入事件
+    searchInput.addEventListener('input', (e) => renderSuggestions(e.target.value));
+    searchInput.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') searchBtn.click();
+    });
+
+    // 点击页面其他地方关闭建议
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+            suggestionsDiv.style.display = 'none';
+        }
+    });
+
+    // 浮动按钮显示搜索框
+    floatBtn.addEventListener('click', showSearchArea);
+
+    // 图片模态框
+    function openImageModal(src) {
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImage');
+        modal.style.display = 'flex';
+        modalImg.src = src;
+    }
+    function closeImageModal() {
+        document.getElementById('imageModal').style.display = 'none';
+    }
+
+    // 横屏提示检测
+    function checkOrientation() {
+        const tip = document.getElementById('rotateTip');
+        if (window.innerHeight < window.innerWidth) {
+            tip.style.display = 'none';
+        } else {
+            tip.style.display = 'block';
+        }
+    }
+    window.addEventListener('resize', checkOrientation);
+    checkOrientation();
+</script>
+</body>
+</html>
